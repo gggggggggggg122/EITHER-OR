@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Either/Or</title>
+<style>
+:root{--bg:#2a1a3f;--card:#f1ecff;--ink:#241436;--a:#ff7a2f;--b:#7fe3c4;--mute:#b8a8d8;box-sizing:border-box;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:#fff;font-family:ui-rounded,"Trebuchet MS",system-ui,sans-serif}
+#v{max-width:460px;margin:0 auto;padding:20px 18px 40px}
+h1{font-size:44px;line-height:1;margin:24px 0 6px;letter-spacing:-1px}h2{margin:0 0 10px;font-size:20px}
+p{color:var(--mute);margin:6px 0 16px}
+input,select{width:100%;font:inherit;font-size:18px;padding:14px;border-radius:12px;border:2px solid #4a3470;background:#1f1230;color:#fff;margin-bottom:10px}
+button{font:inherit;font-weight:800;font-size:18px;border:0;border-radius:14px;padding:16px;width:100%;margin-bottom:10px;background:var(--a);color:var(--ink);cursor:pointer}
+button.alt{background:var(--b)}button.ghost{background:transparent;color:var(--mute);border:2px solid #4a3470}button:disabled{opacity:.4}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.card{background:var(--card);color:var(--ink);border-radius:22px;padding:30px 18px;text-align:center;margin:10px 0 18px}
+.card small{color:#6a5a8a;font-weight:700}.card .n{font-size:40px;font-weight:900;line-height:1.05;margin-top:8px;word-break:break-word}
+.code{font-size:56px;font-weight:900;letter-spacing:8px;color:var(--b);text-align:center}
+ul{list-style:none;padding:0;margin:0 0 16px}li{display:flex;justify-content:space-between;padding:10px 14px;border-radius:10px;background:#3a2656;margin-bottom:6px}
+.t{font-size:32px;font-weight:900;text-align:right;color:var(--b)}
+.pick{outline:4px solid #fff}.ok{color:var(--b)}.no{color:#ff8a8a}
+label{display:flex;gap:10px;align-items:center;margin:8px 0 14px}label input{width:22px;height:22px;margin:0}
+#m{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0));background:#fff;color:var(--ink);padding:12px;border-radius:12px;display:none;font-weight:700}
+</style></head><body>
+<div id="v"></div><div id="m" role="alert"></div>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+// Question bank: [category pair, name, correct option index]. Add cards here.
+const CATS=[["Celebrity baby name","Race car driver"],["Cheese","Pokémon"],["Dinosaur","Pasta shape"],["Bond villain","Cocktail"],["Roman emperor","Typeface"],["Fruit","Star Wars planet"]];
+const Q=[
+[0,"Apple",0],[0,"Pastor Maldonado",1],[0,"Moon Unit",0],[0,"Valtteri Bottas",1],[0,"Audio Science",0],[0,"Logan Sargeant",1],[0,"Zuma",0],[0,"Kevin Magnussen",1],[0,"Pilot Inspektor",0],[0,"Esteban Ocon",1],[0,"Bluebell Madonna",0],[0,"Nyck de Vries",1],
+[1,"Havarti",0],[1,"Bidoof",1],[1,"Taleggio",0],[1,"Wobbuffet",1],[1,"Jarlsberg",0],[1,"Klefki",1],[1,"Limburger",0],[1,"Stufful",1],[1,"Cotija",0],[1,"Dunsparce",1],
+[2,"Carnotaurus",0],[2,"Strozzapreti",1],[2,"Gallimimus",0],[2,"Casarecce",1],[2,"Utahraptor",0],[2,"Radiatori",1],[2,"Pachycephalosaurus",0],[2,"Paccheri",1],
+[3,"Scaramanga",0],[3,"Boulevardier",1],[3,"Drax",0],[3,"Sazerac",1],[3,"Xenia Onatopp",0],[3,"Jungle Bird",1],[3,"Kananga",0],[3,"Corpse Reviver",1],[3,"Le Chiffre",0],[3,"Hanky Panky",1],
+[4,"Commodus",0],[4,"Garamond",1],[4,"Vespasian",0],[4,"Baskerville",1],[4,"Elagabalus",0],[4,"Didot",1],[4,"Domitian",0],[4,"Futura",1],
+[5,"Kumquat",0],[5,"Kamino",1],[5,"Loquat",0],[5,"Utapau",1],[5,"Feijoa",0],[5,"Geonosis",1],[5,"Salak",0],[5,"Jakku",1],[5,"Tamarillo",0],[5,"Takodana",1]
+];
+const $=s=>document.querySelector(s),esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+let peer,role,hostConn,S=null,conns={},deck=[],cur=null,tick=null,picks={},myPick=null,me={id:''};
+function msg(t){const m=$('#m');m.textContent=t;m.style.display='block';setTimeout(()=>m.style.display='none',3500)}
+const nm=()=>{const n=$('#name').value.trim();if(!n)msg('Enter your name first');return n};
+
+function host(){const name=nm();if(!name)return;
+ const code=Array.from({length:4},()=>"ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.random()*24|0]).join('');
+ peer=new Peer('eo-'+code);
+ peer.on('error',e=>e.type==='unavailable-id'?host():msg('Connection problem ('+e.type+'). Try again.'));
+ peer.on('open',()=>{role='host';me.id='host';S={phase:'lobby',code,players:[{id:'host',name,score:0,done:false}],timer:true,rounds:10,round:0,total:0};push()});
+ peer.on('connection',c=>{c.on('data',d=>hostMsg(c,d));c.on('close',()=>drop(c.peer))})}
+function hostMsg(c,d){
+ if(d.t==='join'){
+  if(S.phase!=='lobby'||S.players.length>=8){c.send({t:'err',m:S.phase!=='lobby'?'That game has already started':'Room is full (8 players max)'});return}
+  conns[c.peer]=c;S.players.push({id:c.peer,name:String(d.name).slice(0,14),score:0,done:false});push()
+ }else if(d.t==='pick')pick(c.peer,d.c)}
+function drop(id){if(!S)return;delete conns[id];S.players=S.players.filter(p=>p.id!==id);
+ if(S.phase==='question'&&S.players.every(p=>p.done))reveal();else push()}
+function pick(id,c){if(S.phase!=='question')return;const p=S.players.find(x=>x.id===id);if(!p||p.done)return;
+ picks[id]=c;p.done=true;S.players.every(x=>x.done)?reveal():push()}
+function start(){if(S.players.length<3)return;deck=shuffle(Q.map((_,i)=>i)).slice(0,S.rounds);S.total=deck.length;S.round=0;S.players.forEach(p=>p.score=0);next()}
+function next(){if(S.round>=deck.length){clearInterval(tick);S.phase='end';S.rev=null;return push()}
+ cur=Q[deck[S.round]];S.round++;picks={};S.players.forEach(p=>p.done=false);S.rev=null;
+ S.card={n:cur[1],o:CATS[cur[0]]};S.phase='question';S.left=S.timer?60:null;push();clearInterval(tick);
+ if(S.timer)tick=setInterval(()=>{S.left--;S.left<=0?reveal():push()},1000)}
+function reveal(){clearInterval(tick);const a=cur[2];S.players.forEach(p=>{if(picks[p.id]===a)p.score++});
+ S.rev={a,picks:{...picks}};S.phase='reveal';push()}
+function again(){S.phase='lobby';S.round=0;push()}
+function push(){for(const id in conns)if(conns[id].open)conns[id].send({t:'state',s:S});render()}
+
+function join(){const name=nm(),code=$('#code').value.trim().toUpperCase();if(!name)return;if(code.length!==4)return msg('Enter the 4-letter room code');
+ peer=new Peer();
+ peer.on('error',e=>msg(e.type==='peer-unavailable'?'Room not found. Check the code.':'Connection problem ('+e.type+')'));
+ peer.on('open',id=>{me.id=id;const c=peer.connect('eo-'+code,{reliable:true});hostConn=c;
+  c.on('open',()=>{role='player';c.send({t:'join',name})});
+  c.on('data',d=>{if(d.t==='state'){if(d.s.phase==='question'&&(!S||S.round!==d.s.round))myPick=null;S=d.s;render()}else if(d.t==='err')msg(d.m)});
+  c.on('close',()=>{msg('Host disconnected. The game is over.');S=null;render()})})}
+function choose(c){if(myPick!==null||S.phase!=='question')return;myPick=c;role==='host'?pick('host',c):hostConn.send({t:'pick',c});render()}
+function setTimer(v){S.timer=v;push()}function setRounds(v){S.rounds=+v;push()}
+
+const HOME=`<h1>Either/Or</h1><p>A name pops up. Is it A or B? Guess fast, everyone plays on their own phone.</p>
+<input id="name" placeholder="Your name" maxlength="14" autocomplete="off">
+<button onclick="host()">Host a new game</button>
+<p style="text-align:center;margin:18px 0 8px">or join a friend's game</p>
+<input id="code" placeholder="4-letter room code" maxlength="4" autocapitalize="characters" autocomplete="off">
+<button class="alt" onclick="join()">Join game</button>`;
+
+function board(mode){const P=[...S.players].sort((a,b)=>b.score-a.score);
+ return '<ul>'+P.map(p=>{let r=p.score;
+  if(mode==='q')r=p.done?'locked in':'thinking…';
+  if(mode==='r'&&S.rev)r=`<span class="${S.rev.picks[p.id]===S.rev.a?'ok':'no'}">${S.rev.picks[p.id]===S.rev.a?'✓':'✗'}</span> ${p.score}`;
+  if(mode==='l')r='';
+  return `<li><span>${esc(p.name)}${p.id===me.id?' (you)':''}</span><b>${r}</b></li>`}).join('')+'</ul>'}
+
+function render(){const v=$('#v');if(!S){v.innerHTML=HOME;return}
+ const H=role==='host',ph=S.phase;
+ if(ph==='lobby'){v.innerHTML=`<h2>Room code</h2><div class="code">${S.code}</div><p style="text-align:center">Friends join at this page with this code.</p>
+ <h2>Players (${S.players.length}/8)</h2>${board('l')}`+(H?`<label><input type="checkbox" ${S.timer?'checked':''} onchange="setTimer(this.checked)"> 60-second timer per card</label>
+ <select onchange="setRounds(this.value)">${[10,15,20,30].map(n=>`<option value="${n}" ${n===S.rounds?'selected':''}>${n} cards</option>`).join('')}</select>
+ <button onclick="start()" ${S.players.length<3?'disabled':''}>${S.players.length<3?'Need 3+ players':'Start game'}</button>`:`<p>Waiting for the host to start. Timer: ${S.timer?'60 seconds':'off'}.</p>`);return}
+ if(ph==='question'){const o=S.card.o,c=S.card;
+  v.innerHTML=`<div class="t">${S.timer?S.left:''}</div><div class="card"><small>Card ${S.round} of ${S.total}</small><div class="n">${esc(c.n)}</div></div>
+  <button class="${myPick===0?'pick':''}" ${myPick!==null?'disabled':''} onclick="choose(0)">${o[0]}</button>
+  <button class="alt ${myPick===1?'pick':''}" ${myPick!==null?'disabled':''} onclick="choose(1)">${o[1]}</button>`+board('q');return}
+ if(ph==='reveal'){const a=S.rev.a,o=S.card.o,won=S.rev.picks[me.id]===a,last=S.round>=S.total;
+  v.innerHTML=`<div class="card"><small>${won?'You got it!':'Not this time'}</small><div class="n">${esc(S.card.n)}</div><p style="color:var(--ink);font-weight:800;font-size:22px">is a ${o[a].toLowerCase()}</p></div>${board('r')}`
+  +(H?`<button onclick="next()">${last?'See final results':'Next card'}</button>`:'<p>Waiting for the host…</p>');return}
+ if(ph==='end'){const P=[...S.players].sort((a,b)=>b.score-a.score);
+  v.innerHTML=`<h1>${esc(P[0].name)} wins!</h1><p>Final scores after ${S.total} cards.</p>${board('e')}`+(H?'<button onclick="again()">Play again</button>':'<p>Waiting for the host…</p>')}}
+render();
+</script></body></html>
